@@ -3,21 +3,36 @@ kind: Deployment
 metadata:
   name: llm-app
   namespace: ai-observability
+
 spec:
   replicas: 2
+
   selector:
     matchLabels:
       app: llm-app
+
   template:
     metadata:
       labels:
         app: llm-app
+
     spec:
       containers:
         - name: llm-app
           image: acrtafaiobs.azurecr.io/ai-observability-app:v2
+
           ports:
             - containerPort: 8000
+
           env:
             - name: ENVIRONMENT
               value: "aks-demo"
+
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4318"
+
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+
+            - name: OTEL_SERVICE_NAME
+              value: "azure-llm-app"

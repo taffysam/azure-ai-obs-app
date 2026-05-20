@@ -5,6 +5,12 @@ metadata:
   namespace: ai-observability
 data:
   otel-collector-config.yaml: |
+    extensions:
+      basicauth/langfuse:
+        client_auth:
+          username: ${env:LANGFUSE_PUBLIC_KEY}
+          password: ${env:LANGFUSE_SECRET_KEY}
+
     receivers:
       otlp:
         protocols:
@@ -19,22 +25,29 @@ data:
         trace_statements:
           - context: span
             statements:
-              - set(attributes["azure.prompt.sanitized"], attributes["llm.prompt"]) where attributes["llm.prompt"] != nil
-              - set(attributes["azure.response.sanitized"], attributes["llm.response"]) where attributes["llm.response"] != nil
-              - replace_pattern(attributes["azure.prompt.sanitized"], "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[email-redacted]")
-              - replace_pattern(attributes["azure.response.sanitized"], "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[email-redacted]")
-              - replace_pattern(attributes["azure.prompt.sanitized"], "\\b\\d{13}\\b", "[sa-id-redacted]")
-              - replace_pattern(attributes["azure.response.sanitized"], "\\b\\d{13}\\b", "[sa-id-redacted]")
-              - replace_pattern(attributes["azure.prompt.sanitized"], "\\b(?:\\+27|0)[0-9][0-9\\s-]{7,12}\\b", "[phone-redacted]")
-              - replace_pattern(attributes["azure.response.sanitized"], "\\b(?:\\+27|0)[0-9][0-9\\s-]{7,12}\\b", "[phone-redacted]")
-              - replace_pattern(attributes["azure.prompt.sanitized"], "\\b(?:\\d[ -]*?){13,19}\\b", "[card-redacted]")
-              - replace_pattern(attributes["azure.response.sanitized"], "\\b(?:\\d[ -]*?){13,19}\\b", "[card-redacted]")
-              - replace_pattern(attributes["azure.prompt.sanitized"], "(?i)\\b(cvv|cvc|security code)[:= ]+\\d{3,4}\\b", "[cvv-redacted]")
-              - replace_pattern(attributes["azure.response.sanitized"], "(?i)\\b(cvv|cvc|security code)[:= ]+\\d{3,4}\\b", "[cvv-redacted]")
-              - set(attributes["azure.prompt.sanitized"], Substring(attributes["azure.prompt.sanitized"], 0, 4000)) where attributes["azure.prompt.sanitized"] != nil and Len(attributes["azure.prompt.sanitized"]) > 4000
-              - set(attributes["azure.response.sanitized"], Substring(attributes["azure.response.sanitized"], 0, 4000)) where attributes["azure.response.sanitized"] != nil and Len(attributes["azure.response.sanitized"]) > 4000
-              - delete_key(attributes, "llm.prompt")
-              - delete_key(attributes, "llm.response")
+              - set(span.attributes["azure.prompt.sanitized"], span.attributes["llm.prompt"]) where span.attributes["llm.prompt"] != nil
+              - set(span.attributes["azure.response.sanitized"], span.attributes["llm.response"]) where span.attributes["llm.response"] != nil
+
+              - replace_pattern(span.attributes["azure.prompt.sanitized"], "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[email-redacted]") where span.attributes["azure.prompt.sanitized"] != nil
+              - replace_pattern(span.attributes["azure.response.sanitized"], "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[email-redacted]") where span.attributes["azure.response.sanitized"] != nil
+
+              - replace_pattern(span.attributes["azure.prompt.sanitized"], "\\b\\d{13}\\b", "[sa-id-redacted]") where span.attributes["azure.prompt.sanitized"] != nil
+              - replace_pattern(span.attributes["azure.response.sanitized"], "\\b\\d{13}\\b", "[sa-id-redacted]") where span.attributes["azure.response.sanitized"] != nil
+
+              - replace_pattern(span.attributes["azure.prompt.sanitized"], "\\b(?:\\+27|0)[0-9][0-9\\s-]{7,12}\\b", "[phone-redacted]") where span.attributes["azure.prompt.sanitized"] != nil
+              - replace_pattern(span.attributes["azure.response.sanitized"], "\\b(?:\\+27|0)[0-9][0-9\\s-]{7,12}\\b", "[phone-redacted]") where span.attributes["azure.response.sanitized"] != nil
+
+              - replace_pattern(span.attributes["azure.prompt.sanitized"], "\\b(?:\\d[ -]*?){13,19}\\b", "[card-redacted]") where span.attributes["azure.prompt.sanitized"] != nil
+              - replace_pattern(span.attributes["azure.response.sanitized"], "\\b(?:\\d[ -]*?){13,19}\\b", "[card-redacted]") where span.attributes["azure.response.sanitized"] != nil
+
+              - replace_pattern(span.attributes["azure.prompt.sanitized"], "(?i)\\b(cvv|cvc|security code)[:= ]+\\d{3,4}\\b", "[cvv-redacted]") where span.attributes["azure.prompt.sanitized"] != nil
+              - replace_pattern(span.attributes["azure.response.sanitized"], "(?i)\\b(cvv|cvc|security code)[:= ]+\\d{3,4}\\b", "[cvv-redacted]") where span.attributes["azure.response.sanitized"] != nil
+
+              - set(span.attributes["azure.prompt.sanitized"], Substring(span.attributes["azure.prompt.sanitized"], 0, 4000)) where span.attributes["azure.prompt.sanitized"] != nil and Len(span.attributes["azure.prompt.sanitized"]) > 4000
+              - set(span.attributes["azure.response.sanitized"], Substring(span.attributes["azure.response.sanitized"], 0, 4000)) where span.attributes["azure.response.sanitized"] != nil and Len(span.attributes["azure.response.sanitized"]) > 4000
+
+              - delete_key(span.attributes, "llm.prompt")
+              - delete_key(span.attributes, "llm.response")
 
       batch:
 
@@ -42,24 +55,25 @@ data:
       debug:
         verbosity: detailed
 
-      otlp_http/splunk_traces:
-        traces_endpoint: "https://ingest.eu0.signalfx.com/v2/trace/otlp"
-        headers:
-          X-SF-Token: ${env:SPLUNK_ACCESS_TOKEN}
-
       signalfx:
         access_token: ${env:SPLUNK_ACCESS_TOKEN}
         realm: ${env:SPLUNK_REALM}
+
+      otlp_http/langfuse:
+        endpoint: http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel
+        auth:
+          authenticator: basicauth/langfuse
 
       azuremonitor:
         connection_string: ${env:AZURE_MONITOR_CONNECTION_STRING}
 
     service:
+      extensions: [basicauth/langfuse]
       pipelines:
         traces:
           receivers: [otlp]
           processors: [transform/pii_redact, batch]
-          exporters: [debug, otlp_http/splunk_traces, azuremonitor]
+          exporters: [debug, signalfx, otlp_http/langfuse, azuremonitor]
 
         metrics:
           receivers: [otlp]
@@ -91,8 +105,10 @@ spec:
             - secretRef:
                 name: observability-secrets
           ports:
-            - containerPort: 4317
-            - containerPort: 4318
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
           volumeMounts:
             - name: otel-config
               mountPath: /etc/otelcol-contrib/otel-collector-config.yaml
