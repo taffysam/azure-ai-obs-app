@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-app-service
+  namespace: ai-observability
+spec:
+  type: LoadBalancer
+  selector:
+    app: llm-app
+  ports:
+    - port: 80
+      targetPort: 8000

@@ -1,0 +1,18 @@
+version: v1
+prompts:
+  - id: ai_observability_basic
+    input: "Explain AI observability in simple terms."
+    expected_keywords:
+      - traces
+      - metrics
+      - logs
+      - latency
+      - tokens
+
+  - id: pii_governance
+    input: "Why should PII be removed before telemetry is sent?"
+    expected_keywords:
+      - privacy
+      - compliance
+      - governance
+      - redaction

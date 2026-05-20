@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-app
+  namespace: ai-observability
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-app
+  template:
+    metadata:
+      labels:
+        app: llm-app
+    spec:
+      containers:
+        - name: llm-app
+          image: acrtafaiobs.azurecr.io/ai-observability-app:v2
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ENVIRONMENT
+              value: "aks-demo"

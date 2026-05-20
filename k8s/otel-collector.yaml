@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: ai-observability
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      transform/pii_redact:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - set(attributes["azure.prompt.sanitized"], attributes["llm.prompt"]) where attributes["llm.prompt"] != nil
+              - set(attributes["azure.response.sanitized"], attributes["llm.response"]) where attributes["llm.response"] != nil
+              - replace_pattern(attributes["azure.prompt.sanitized"], "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[email-redacted]")
+              - replace_pattern(attributes["azure.response.sanitized"], "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "[email-redacted]")
+              - replace_pattern(attributes["azure.prompt.sanitized"], "\\b\\d{13}\\b", "[sa-id-redacted]")
+              - replace_pattern(attributes["azure.response.sanitized"], "\\b\\d{13}\\b", "[sa-id-redacted]")
+              - replace_pattern(attributes["azure.prompt.sanitized"], "\\b(?:\\+27|0)[0-9][0-9\\s-]{7,12}\\b", "[phone-redacted]")
+              - replace_pattern(attributes["azure.response.sanitized"], "\\b(?:\\+27|0)[0-9][0-9\\s-]{7,12}\\b", "[phone-redacted]")
+              - replace_pattern(attributes["azure.prompt.sanitized"], "\\b(?:\\d[ -]*?){13,19}\\b", "[card-redacted]")
+              - replace_pattern(attributes["azure.response.sanitized"], "\\b(?:\\d[ -]*?){13,19}\\b", "[card-redacted]")
+              - replace_pattern(attributes["azure.prompt.sanitized"], "(?i)\\b(cvv|cvc|security code)[:= ]+\\d{3,4}\\b", "[cvv-redacted]")
+              - replace_pattern(attributes["azure.response.sanitized"], "(?i)\\b(cvv|cvc|security code)[:= ]+\\d{3,4}\\b", "[cvv-redacted]")
+              - set(attributes["azure.prompt.sanitized"], Substring(attributes["azure.prompt.sanitized"], 0, 4000)) where attributes["azure.prompt.sanitized"] != nil and Len(attributes["azure.prompt.sanitized"]) > 4000
+              - set(attributes["azure.response.sanitized"], Substring(attributes["azure.response.sanitized"], 0, 4000)) where attributes["azure.response.sanitized"] != nil and Len(attributes["azure.response.sanitized"]) > 4000
+              - delete_key(attributes, "llm.prompt")
+              - delete_key(attributes, "llm.response")
+
+      batch:
+
+    exporters:
+      debug:
+        verbosity: detailed
+
+      otlp_http/splunk_traces:
+        traces_endpoint: "https://ingest.eu0.signalfx.com/v2/trace/otlp"
+        headers:
+          X-SF-Token: ${env:SPLUNK_ACCESS_TOKEN}
+
+      signalfx:
+        access_token: ${env:SPLUNK_ACCESS_TOKEN}
+        realm: ${env:SPLUNK_REALM}
+
+      azuremonitor:
+        connection_string: ${env:AZURE_MONITOR_CONNECTION_STRING}
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [transform/pii_redact, batch]
+          exporters: [debug, otlp_http/splunk_traces, azuremonitor]
+
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug, signalfx, azuremonitor]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: ai-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.151.0
+          args:
+            - "--config=/etc/otelcol-contrib/otel-collector-config.yaml"
+          envFrom:
+            - secretRef:
+                name: observability-secrets
+          ports:
+            - containerPort: 4317
+            - containerPort: 4318
+          volumeMounts:
+            - name: otel-config
+              mountPath: /etc/otelcol-contrib/otel-collector-config.yaml
+              subPath: otel-collector-config.yaml
+      volumes:
+        - name: otel-config
+          configMap:
+            name: otel-collector-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: ai-observability
+spec:
+  type: ClusterIP
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
