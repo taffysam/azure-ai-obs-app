@@ -11,7 +11,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 
 resource = Resource.create({
     "service.name": "llm-app",
-    "deployment.environment": os.getenv("ENVIRONMENT", "dev")
+    "deployment.environment": os.getenv("ENVIRONMENT", "test")
 })
 
 trace.set_tracer_provider(TracerProvider(resource=resource))
